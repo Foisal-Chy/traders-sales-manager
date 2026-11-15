@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="FC Traders">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>MGI Fresh | Dealership Management System</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<aside id="side" aria-label="Main navigation">
+  <div class="brand"><span class="logo">MGI</span><div><b id="brandName">Foisal Chowdhury Traders</b><small>MGI Fresh Dealership</small></div></div>
+  <nav id="nav">
+    <a href="#dashboard"><i data-lucide="layout-dashboard"></i>Dashboard</a>
+    <a href="#sales"><i data-lucide="clipboard-list"></i>Daily Sales</a>
+    <a href="#history"><i data-lucide="history"></i>Sales History</a>
+    <a href="#products"><i data-lucide="package"></i>Products</a>
+    <a href="#reports"><i data-lucide="bar-chart-3"></i>Financial Overview</a>
+    <a href="#settings"><i data-lucide="settings"></i>Settings</a>
+  </nav>
+</aside>
+<div id="main">
+  <header class="top">
+    <button class="ic" id="menu" aria-label="Open menu"><i data-lucide="menu"></i></button>
+    <h1 id="title"></h1><span id="today" class="chip"></span>
+    <button class="ic" id="themeBtn" aria-label="Toggle light or dark mode"><i data-lucide="moon"></i></button>
+  </header>
+  <main id="view" tabindex="-1"></main>
+</div>
+<nav id="bnav" aria-label="Quick navigation">
+  <a href="#dashboard"><i data-lucide="layout-dashboard"></i><span>Home</span></a>
+  <a href="#sales"><i data-lucide="clipboard-list"></i><span>Sales</span></a>
+  <a href="#history"><i data-lucide="history"></i><span>History</span></a>
+  <a href="#products"><i data-lucide="package"></i><span>Products</span></a>
+  <a href="#reports"><i data-lucide="bar-chart-3"></i><span>Reports</span></a>
+  <a href="#settings"><i data-lucide="settings"></i><span>Settings</span></a>
+</nav>
+<dialog id="dlg"></dialog>
+<div id="toasts" aria-live="polite"></div>
+<div id="printArea"></div>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="storage.js"></script>
+<script src="bangla.js"></script>
+<script src="products.js"></script>
+<script src="sales.js"></script>
+<script src="dashboard.js"></script>
+<script src="reports.js"></script>
+<script src="ocr.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
