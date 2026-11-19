@@ -50,52 +50,66 @@ const Ocr = {
     });
     return { rows, written };
   },
-  async open(el) {
+  async open() {
     const d = U.$('#dlg'); d.classList.add('wide');
-    const pr = U.modal('Import sales sheet from a photo', `<p class="muted">Choose a clear, straight, well-lit photo of the sheet. Reading happens in your browser and nothing is uploaded. Handwriting can be misread, so you will check every row before it is used.</p><input type="file" id="ocf" accept="image/*" style="width:100%"><p id="ocs" class="muted"></p>`, [{ label: 'Cancel', v: false }]);
-    U.$('#ocf').onchange = async e => {
-      const f = e.target.files[0], st = U.$('#ocs'); if (!f) return;
-      try {
-        st.textContent = 'Loading reader...'; await Ocr.load();
-        const w = await Tesseract.createWorker('eng', 1, { logger: m => { if (m.status === 'recognizing text') st.textContent = 'Reading sheet... ' + Math.round(m.progress * 100) + '%'; } });
-        await w.setParameters({ tessedit_pageseg_mode: '6' });
-        const { data } = await w.recognize(await Ocr.prep(f).catch(() => f)); await w.terminate();
-        const res = Ocr.parse(data.text); d.close();
-        if (!res.rows.length) return U.toast('No product rows could be read. Try a clearer, straighter photo.', 'err');
-        Ocr.review(res);
-      } catch (x) { st.textContent = x.message || 'Could not read the image.'; }
+    const pr = U.modal('Enter sales from a photo', `<p class="muted">Choose a photo of the sheet. Free tools cannot read handwritten numbers reliably, so the safest way is to see the photo beside the entry table and type the quantity and rate. The total is checked against the total written on paper.</p><input type="file" id="ocf" accept="image/*" style="width:100%"><div id="ocs" class="row" style="margin-top:10px"></div>`, [{ label: 'Cancel', v: false }]);
+    U.$('#ocf').onchange = e => {
+      const f = e.target.files[0]; if (!f) return;
+      U.$('#ocs').innerHTML = '<button class="btn primary" id="oa">Type beside the photo (recommended)</button><button class="btn" id="ob2">Try automatic reading (printed English sheets only)</button><span id="ost" class="muted"></span>';
+      U.$('#oa').onclick = () => { d.close(); Ocr.assist(f); };
+      U.$('#ob2').onclick = () => Ocr.auto(f);
     };
     await pr; d.classList.remove('wide');
   },
-  async review(res) {
+  assist(f) {
+    const rows = Prod.sorted().map(p => ({ pid: p.id, unit: p.unit, price: p.price, qty: 0, ok: true, raw: p.name }));
+    Ocr.review({ rows, written: null, manual: true }, URL.createObjectURL(f));
+  },
+  async auto(f) {
+    const d = U.$('#dlg'), st = U.$('#ost');
+    try {
+      st.textContent = 'Loading reader...'; await Ocr.load();
+      const w = await Tesseract.createWorker('eng', 1, { logger: m => { if (m.status === 'recognizing text') st.textContent = 'Reading sheet... ' + Math.round(m.progress * 100) + '%'; } });
+      await w.setParameters({ tessedit_pageseg_mode: '6' });
+      const { data } = await w.recognize(await Ocr.prep(f).catch(() => f)); await w.terminate();
+      const res = Ocr.parse(data.text); d.close();
+      if (!res.rows.length) return U.toast('No product rows could be read. Use "Type beside the photo" instead.', 'err');
+      Ocr.review(res);
+    } catch (x) { st.textContent = x.message || 'Could not read the image.'; }
+  },
+  async review(res, img) {
     const P = Store.db.products, rows = res.rows, d = U.$('#dlg'), date0 = (Sales.cur && Sales.cur.date) || U.today();
     const opt = r => '<option value="">- skip -</option>' + P.map(p => `<option value="${U.esc(p.id)}" ${p.id === r.pid ? 'selected' : ''}>${U.esc(p.name)}</option>`).join('');
-    const tr = (r, i) => `<tr data-i="${i}"><td class="muted" style="max-width:150px;font-size:11px">${U.esc(r.raw)}</td><td><select data-f="pid" style="max-width:190px">${opt(r)}</select></td><td class="u"></td><td><input class="in" data-f="price" type="number" min="0" step="any" value="${r.price}"></td><td><input class="in" data-f="qty" type="number" min="0" step="any" value="${r.qty}"></td><td class="n lt"></td><td class="st"></td></tr>`;
-    const body = `<div class="bar"><div><label for="od">Sales date</label><input id="od" type="date" value="${date0}"></div><p id="oc" style="margin:0 0 6px"></p></div><div class="tw" style="max-height:46vh"><table class="tbl"><thead><tr><th>Read from photo</th><th>Product</th><th>Unit</th><th class="n">Price</th><th class="n">Qty</th><th class="n">Total</th><th></th></tr></thead><tbody id="ob">${rows.map(tr).join('')}</tbody></table></div><p><b>Grand total: <span id="ot"></span></b></p>`;
+    const tr = (r, i) => `<tr data-i="${i}"><td class="${res.manual ? '' : 'muted'}" style="${res.manual ? 'font-weight:600' : 'max-width:150px;font-size:11px'}">${U.esc(r.raw)}</td><td class="pc"><select data-f="pid" style="max-width:190px">${opt(r)}</select></td><td class="u"></td><td><input class="in" data-f="price" type="number" min="0" step="any" value="${r.price || ''}" placeholder="0"></td><td><input class="in" data-f="qty" type="number" min="0" step="any" value="${r.qty || ''}" placeholder="0"></td><td class="n lt"></td><td class="st"></td></tr>`;
+    const body = `<div class="bar"><div><label for="od">Sales date</label><input id="od" type="date" value="${date0}"></div><div><label for="ow">Total written on paper (optional)</label><input id="ow" type="number" min="0" step="any" value="${res.written ?? ''}"></div><p id="oc" style="margin:0 0 6px"></p></div><div class="tw" style="max-height:46vh"><table class="tbl${res.manual ? ' man' : ''}"><thead><tr><th>${res.manual ? 'Product' : 'Read from photo'}</th><th class="pc">Product</th><th>Unit</th><th class="n">Price</th><th class="n">Qty</th><th class="n">Total</th><th></th></tr></thead><tbody id="ob">${rows.map(tr).join('')}</tbody></table></div><p><b>Grand total: <span id="ot"></span></b></p><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="ou" checked> Also save these rates as the product prices</label>`;
     d.classList.add('wide');
     const refresh = () => {
       let g = 0;
-      U.$('#ob').querySelectorAll('tr').forEach(t => { const r = rows[t.dataset.i], ln = r.pid ? U.r2(r.price * r.qty) : 0; g = U.r2(g + ln); t.querySelector('.lt').textContent = U.money(ln); t.querySelector('.u').textContent = r.unit; t.querySelector('.st').textContent = !r.pid ? '⚠ pick product' : r.ok ? '✓' : '⚠ check'; });
+      U.$('#ob').querySelectorAll('tr').forEach(t => { const r = rows[t.dataset.i], ln = r.pid ? U.r2(r.price * r.qty) : 0; g = U.r2(g + ln); t.querySelector('.lt').textContent = U.money(ln); t.querySelector('.u').textContent = r.unit; t.querySelector('.st').textContent = !r.pid ? '⚠ pick product' : res.manual ? (r.qty > 0 ? '✓' : '') : r.ok ? '✓' : '⚠ check'; });
       U.$('#ot').textContent = U.money(g);
       U.$('#oc').textContent = res.written == null ? 'The total written on the sheet was not detected.' : Math.abs(res.written - g) < 1 ? '✓ Matches the total written on the sheet (' + U.money(res.written) + ')' : '⚠ Sheet says ' + U.money(res.written) + ' but rows add up to ' + U.money(g) + '. Check the ⚠ rows.';
       return g;
     };
-    const pr = U.modal('Check the rows read from your photo', body, [{ label: 'Cancel', v: false }, { label: 'Download CSV', v: 'csv' }, { label: 'Use in Daily Sales', v: 'use', cls: 'primary' }], v => {
+    const pr = U.modal(res.manual ? 'Type the quantity and rate from the photo' : 'Check the rows read from your photo', img ? `<div class="split"><div class="imgp"><label>Zoom <input type="range" id="oz" min="60" max="300" value="100"></label><div class="imgw"><img id="oimg" src="${img}" alt="Sales sheet photo"></div></div><div>${body}</div></div>` : body, [{ label: 'Cancel', v: false }, { label: 'Download CSV', v: 'csv' }, { label: 'Use in Daily Sales', v: 'use', cls: 'primary' }], v => {
       if (v === 'csv') { U.download('sales-from-photo-' + U.$('#od').value + '.csv', U.toCSV([['SL', 'Product', 'Unit', 'Unit price', 'Quantity', 'Total price'], ...rows.filter(r => r.pid).map((r, i) => [i + 1, Prod.find(r.pid).name, r.unit, r.price.toFixed(2), r.qty, U.r2(r.price * r.qty).toFixed(2)]), ['', '', '', '', 'Grand total', refresh().toFixed(2)]]), 'text/csv'); return false; }
       return U.$('#od').value ? true : false;
     });
     const ob = U.$('#ob'); refresh();
+    if (U.$('#oz')) U.$('#oz').oninput = e => { U.$('#oimg').style.width = e.target.value + '%'; };
+    U.$('#ow').oninput = e => { const n = U.num(e.target.value); res.written = n >= 0 ? n : null; refresh(); };
+    d.onkeydown = e => { if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return; e.preventDefault(); if (e.target.dataset.f === 'qty') { const n = e.target.closest('tr').nextElementSibling; n && n.querySelector('[data-f=qty]').focus(); } };
     ob.oninput = ob.onchange = e => {
       const t = e.target.closest('tr'), r = rows[t.dataset.i], f = e.target.dataset.f;
       if (f === 'pid') { const p = Prod.find(e.target.value); r.pid = p ? p.id : ''; r.unit = p ? p.unit : ''; if (p) { r.price = p.price; t.querySelector('[data-f=price]').value = p.price; } }
       else { const n = U.num(e.target.value); e.target.classList.toggle('bad', !(n >= 0)); r[f] = n >= 0 ? n : 0; }
       r.ok = true; refresh();
     };
-    const v = await pr, date = U.$('#od').value; d.classList.remove('wide');
+    const v = await pr, date = U.$('#od').value; d.classList.remove('wide'); d.onkeydown = null; const upd = U.$('#ou') && U.$('#ou').checked; img && URL.revokeObjectURL(img);
     if (v !== 'use') return;
     if (Sales.dirty && !(await U.confirm('Replace current sheet?', 'The sheet open in Daily Sales has unsaved changes. Replace it with the photo data?', 'Replace'))) return;
+    if (upd) { rows.forEach(r => { const p = Prod.find(r.pid); if (p && r.qty > 0 && r.price > 0) p.price = U.r2(r.price); }); Store.save(); }
     const c = Sales.blank(date);
-    rows.filter(r => r.pid).forEach(r => { const x = c.rows.find(y => y.pid === r.pid); if (x) { x.price = U.r2(r.price); x.qty = r.qty; x.unit = r.unit; } });
+    rows.filter(r => r.pid).forEach(r => { const x = c.rows.find(y => y.pid === r.pid); if (x) { x.price = U.r2(r.price); x.qty = r.qty; } });
     Sales.cur = c; Sales.mark(); U.toast('Sheet loaded. Check it, then Save, Print or Download PDF.');
     location.hash === '#sales' ? Sales.render(U.$('#view')) : (location.hash = '#sales');
   }

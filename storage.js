@@ -1,6 +1,6 @@
 'use strict';
 /* storage.js - utilities (U) and persistent data store (Store) */
-const KEY = 'mgi_fresh_v1';
+const KEY = 'mgi_fresh_v1', APP_V = '8';
 const U = {
   charts: {},
   r2: n => Math.round((Number(n) + Number.EPSILON) * 100) / 100,
@@ -31,7 +31,7 @@ const U = {
       d.querySelector('form').onsubmit = e => { e.preventDefault(); const p = d.querySelector('.primary'); p && p.click(); };
       d.oncancel = e => { e.preventDefault(); done(false); };
       d.showModal(); U.icons();
-      const f = d.querySelector('input,select,textarea'); f && f.focus();
+      const f = d.querySelector('input,select,textarea'); if (f && !matchMedia('(pointer: coarse)').matches) f.focus();
     });
   },
   ask: (title, msg, buttons) => U.modal(title, '<p>' + msg + '</p>', buttons),
@@ -69,21 +69,41 @@ const U = {
 
 const Store = {
   db: null,
-  defaults: () => ({ v: 1, settings: { dealer: 'Foisal Chowdhury Traders', phone: '', email: '', address: '', theme: 'light', prep: '', auth: '', showZero: true, seeded: false, lastBackup: '', bnDigits: true, sheetAsked: false, titleBn: 'মেসার্স ফয়সাল চৌধুরী ট্রেডার্স', distBn: 'পরিবেশক : মেঘনা গ্রুপ অব ইন্ডাস্ট্রিজ (ফ্রেশ)', addrBn: 'ইছাখালী, রাঙ্গুনিয়া, চট্টগ্রাম। প্রোডাক্ট লাইন-এ', phoneBn: '০১৮৭৯-৯০৮৪১৪, ০১৫৭৫-৬৮৭৪৫৯ (ফোরকান)', phone2Bn: '০১৯২৬-০২১৪৪০ (সাকিব)' }, products: [], sales: [] }),
+  defaults: () => ({ v: 1, settings: { dealer: 'Foisal Chowdhury Traders', phone: '', email: '', address: '', theme: 'light', prep: '', auth: '', showZero: true, seeded: false, lastBackup: '', pin: '', bnDigits: true, sheetAsked: false, titleBn: 'মেসার্স ফয়সাল চৌধুরী ট্রেডার্স', distBn: 'পরিবেশক : মেঘনা গ্রুপ অব ইন্ডাস্ট্রিজ (ফ্রেশ)', addrBn: 'ইছাখালী, রাঙ্গুনিয়া, চট্টগ্রাম। প্রোডাক্ট লাইন-এ', phoneBn: '০১৮৭৯-৯০৮৪১৪, ০১৫৭৫-৬৮৭৪৫৯ (ফোরকান)', phone2Bn: '০১৯২৬-০২১৪৪০ (সাকিব)' }, products: [], sales: [], payments: [], stock: [], priceLog: [], staff: [], salaryPay: [] }),
   /* Strict validation used for localStorage and imports */
   valid(d) {
-    return !!d && typeof d === 'object' && Array.isArray(d.products) && Array.isArray(d.sales) && !!d.settings && typeof d.settings === 'object' &&
+    return !!d && typeof d === 'object' && ['payments', 'stock', 'priceLog', 'staff', 'salaryPay'].every(k => d[k] === undefined || Array.isArray(d[k])) && Array.isArray(d.products) && Array.isArray(d.sales) && !!d.settings && typeof d.settings === 'object' &&
       d.products.every(p => p && p.id && p.name && Number.isFinite(p.price) && p.price >= 0) &&
       d.sales.every(s => s && s.id && /^\d{4}-\d{2}-\d{2}$/.test(s.date) && Array.isArray(s.rows) && s.rows.every(r => r && Number.isFinite(r.price) && Number.isFinite(r.qty) && r.price >= 0 && r.qty >= 0));
   },
   merge(d) { const x = Store.defaults(); Object.assign(x, d, { settings: Object.assign(x.settings, d.settings) }); if (x.settings.dealer === 'MGI Fresh Dealership') x.settings.dealer = Store.defaults().settings.dealer; return x; },
+  /* Keeps every usable record from damaged data instead of throwing everything away */
+  repair(d) {
+    if (!d || typeof d !== 'object') return null;
+    const ok = v => Number.isFinite(+v) && +v >= 0 && v !== null && v !== '', x = { ...d }; let skipped = 0;
+    ['products', 'sales', 'payments', 'stock', 'priceLog', 'staff', 'salaryPay'].forEach(k => { x[k] = Array.isArray(d[k]) ? d[k] : []; });
+    x.settings = d.settings && typeof d.settings === 'object' ? d.settings : {};
+    x.products = x.products.filter(p => { const g = p && p.id && p.name && ok(p.price); if (!g) skipped++; return g; }).map(p => ({ ...p, price: +p.price }));
+    x.sales = x.sales.map(s => s && Array.isArray(s.rows) ? { ...s, rows: s.rows.filter(r => { const g = r && ok(r.price) && ok(r.qty); if (!g) skipped++; return g; }).map(r => ({ ...r, price: +r.price, qty: +r.qty })) } : null)
+      .filter(s => { const g = s && s.id && /^\d{4}-\d{2}-\d{2}$/.test(s.date); if (!g) skipped++; return g; });
+    return { data: x, skipped };
+  },
   load() {
-    let raw = null;
-    try { raw = localStorage.getItem(KEY); if (raw) { const d = JSON.parse(raw); if (Store.valid(d)) { Store.db = Store.merge(d); return; } } } catch (e) { /* fall through */ }
-    if (raw) { try { localStorage.setItem(KEY + '_corrupt_' + Date.now(), raw); } catch (e) { } U.pending = 'Saved data was unreadable. A copy was kept in the browser and the app was reset.'; }
+    let raw = null, d = null;
+    try { raw = localStorage.getItem(KEY); if (raw) { d = JSON.parse(raw); if (Store.valid(d)) { Store.db = Store.merge(d); return; } } } catch (e) { d = null; }
+    if (raw) { try { localStorage.setItem(KEY + '_corrupt_' + Date.now(), raw); } catch (e) { } }
+    const r = Store.repair(d);
+    if (r) { Store.db = Store.merge(r.data); U.pending = 'Some saved records were damaged and skipped (' + r.skipped + '). A copy of the original was kept.'; return; }
+    if (raw) U.pending = 'Saved data was unreadable. A copy was kept in the browser and the app was reset.';
     Store.db = Store.defaults();
   },
-  save() { try { localStorage.setItem(KEY, JSON.stringify(Store.db)); } catch (e) { U.toast('Could not save: browser storage is full or blocked', 'err'); } },
+  snap() { Store.lp = {}; Store.lpDb = Store.db; Store.db.products.forEach(p => Store.lp[p.id] = p.price); },
+  logPrices() {
+    if (Store.lpDb !== Store.db) return Store.snap();
+    Store.db.products.forEach(p => { const o = Store.lp[p.id]; if (o !== undefined && o !== p.price) Store.db.priceLog.push({ date: U.today(), pid: p.id, name: p.name, old: o, price: p.price }); Store.lp[p.id] = p.price; });
+    if (Store.db.priceLog.length > 3000) Store.db.priceLog = Store.db.priceLog.slice(-2000);
+  },
+  save() { Store.lp && Store.logPrices(); try { localStorage.setItem(KEY, JSON.stringify(Store.db)); } catch (e) { U.toast('Could not save: browser storage is full or blocked', 'err'); } },
   exportJSON() { Store.db.settings.lastBackup = U.today(); Store.save(); U.download('mgi-fresh-backup-' + U.today() + '.json', JSON.stringify({ app: 'mgi-fresh', exported: new Date().toISOString(), data: Store.db }, null, 2), 'application/json'); },
   parseImport(text) {
     try { const j = JSON.parse(text), d = j && j.data ? j.data : j; return Store.valid(d) ? { ok: true, data: Store.merge(d) } : { ok: false, error: 'File is not a valid MGI Fresh backup.' }; }
