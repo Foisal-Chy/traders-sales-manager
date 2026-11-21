@@ -51,7 +51,7 @@ const App = {
     $('#d_all').onclick = async () => { if (await U.confirm('Reset the entire application?', 'This permanently deletes all products, sales and settings. Export a backup first.', 'Reset everything')) { Store.keepPrev(); Store.db = Store.defaults(); Store.db.settings.seeded = true; Store.save(); Sales.cur = null; Sales.clean(); App.theme('light'); U.toast('Application reset'); App.settings(el); } };
   },
   async init() {
-    if (Store.peek()) await Pin.unlockEnc(); else Store.load(); Prod.seed(); Prod.migrateUnits(); Prod.migrateNames(); Prod.migrateLayout(); Prod.migratePrices(); Prod.migrateSold(); Prod.migrateLiquids(); Prod.migratePrices2(); Store.snap(); App.theme(Store.db.settings.theme);
+    if (Store.peek()) await Pin.unlockEnc(); else Store.load(); Prod.seed(); Prod.migrateUnits(); Prod.migrateNames(); Prod.migrateLayout(); Prod.migratePrices(); Prod.migrateSold(); Prod.migrateLiquids(); Prod.migratePrices2(); const merged = Prod.dedupe(); if (merged) setTimeout(() => U.toast('Merged ' + merged + ' duplicate product(s) with the same name'), 900); Store.snap(); App.theme(Store.db.settings.theme);
     U.$('#themeBtn').onclick = () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; Store.db.settings.theme = t; Store.save(); App.theme(t); App.route(); };
     U.$('#menu').onclick = () => U.$('#side').classList.toggle('open');
     window.addEventListener('hashchange', App.route);
@@ -65,6 +65,7 @@ const App = {
       Store.db.settings.sheetAsked = true; if (ok) Prod.useSheetList(); Store.save(); App.route();
     }, 800);
     if (document.fonts) ['400', '600', '700'].forEach(w => document.fonts.load(w + ' 14px "Hind Siliguri"', 'আমার').catch(() => { }));
+    new MutationObserver(() => { cancelAnimationFrame(App._ic); App._ic = requestAnimationFrame(() => { if (document.querySelector('i[data-lucide]')) U.icons(); }); }).observe(document.body, { childList: true, subtree: true });
     U.$('#lockBtn').onclick = () => Pin.lock(); if (!Store.enc) Pin.lock(); Pin.touch();
     document.addEventListener('visibilitychange', () => { if (document.hidden && Store.enc) Store.flush(); });
     App.route(); if (U.pending) U.toast(U.pending, 'err');

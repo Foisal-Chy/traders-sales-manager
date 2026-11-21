@@ -67,6 +67,23 @@ const Prod = {
   nextId() { const u = Prod.usedIds(); let n = Store.db.products.length + 1; while (u.has('p' + String(n).padStart(3, '0'))) n++; return 'P' + String(n).padStart(3, '0'); },
   /* Builds the product list that matches the printed sheet */
   build() { return SEED.split('\n').map((l, i) => { const [name, category, unit, price, col, row, su] = l.split('|'); return { id: 'P' + String(i + 1).padStart(3, '0'), name, category, unit: unit || name.split('-').pop().trim(), price: +price, desc: '', col, row: +row, su: su || 'Piece', pp: 0, pu: Prod.rulePu(name) }; }); },
+  key: s => String(s).replace(/\s+/g, ''),
+  /* The same product listed twice (same name): keep one, move its history to it, drop the other */
+  dedupe() {
+    const db = Store.db, by = {}, uses = id => db.sales.reduce((a, s) => a + s.rows.filter(r => r.pid === id).length, 0) + db.stock.filter(e => e.pid === id).length;
+    db.products.forEach(p => (by[Prod.key(p.name)] = by[Prod.key(p.name)] || []).push(p));
+    const groups = Object.values(by).filter(g => g.length > 1); if (!groups.length) return 0;
+    Store.keepPrev(); let n = 0;
+    groups.forEach(g => {
+      g.sort((a, b) => uses(b.id) - uses(a.id) || (b.price > 0) - (a.price > 0)); const keep = g[0];
+      g.slice(1).forEach(d => {
+        ['price', 'su', 'pu', 'pp', 'ppc', 'ppb', 'lit', 'min', 'col', 'row', 'category', 'desc', 'unit'].forEach(k => { if (!keep[k] && d[k]) keep[k] = d[k]; });
+        db.sales.forEach(s => s.rows.forEach(r => { if (r.pid === d.id) r.pid = keep.id; })); db.stock.forEach(e => { if (e.pid === d.id) e.pid = keep.id; }); db.priceLog.forEach(x => { if (x.pid === d.id) x.pid = keep.id; });
+        db.products = db.products.filter(p => p !== d); n++;
+      });
+    });
+    Store.save(); return n;
+  },
   /* Products in printed-sheet order (left column then right column, by row) */
   sorted() { const k = p => (p.col === 'L' ? 0 : p.col === 'R' ? 1 : 2) * 1000 + (p.row || 0); return Store.db.products.map((p, i) => [p, i]).sort((a, b) => k(a[0]) - k(b[0]) || a[1] - b[1]).map(x => x[0]); },
   /* One-time: new sheet positions, renamed Gold Tea, new products, and a default 'sold by' unit */
@@ -75,7 +92,7 @@ const Prod = {
     P.forEach(p => { if (!p.su) { p.su = 'Piece'; ch = true; } });
     if ((S.layoutV || 0) < 2 && P.some(p => p.col)) {
       const old = P.find(p => p.name === 'ফ্রেশ গোল্ড টি- ৫০০ গ্রাম'); if (old) old.name = 'ফ্রেশ গোল্ড টি CP- ৫০০ গ্রাম';
-      Prod.build().forEach(b => { const x = P.find(q => q.name === b.name); if (x) { x.col = b.col; x.row = b.row; } else { b.id = Prod.nextId(); P.push(b); } }); ch = true;
+      Prod.build().forEach(b => { const x = P.find(q => Prod.key(q.name) === Prod.key(b.name)); if (x) { x.col = b.col; x.row = b.row; } else { b.id = Prod.nextId(); P.push(b); } }); ch = true;
     }
     if (P.some(p => p.col)) S.layoutV = 2; if (ch) Store.save();
   },
@@ -95,7 +112,7 @@ const Prod = {
   /* One-time: fill in the rates (and P / D / B sold-by units) from the rate list. A price you already set is never changed. */
   migratePrices() {
     const S = Store.db.settings; if (S.priceV) return;
-    Prod.build().forEach(b => { if (!(b.price > 0)) return; const p = Store.db.products.find(x => x.name === b.name); if (!p) return; if (!(p.price > 0)) p.price = b.price; if (b.su !== 'Carton' && (p.su || 'Piece') === 'Carton') p.su = b.su; });
+    Prod.build().forEach(b => { if (!(b.price > 0)) return; const p = Store.db.products.find(x => Prod.key(x.name) === Prod.key(b.name)); if (!p) return; if (!(p.price > 0)) p.price = b.price; if (b.su !== 'Carton' && (p.su || 'Piece') === 'Carton') p.su = b.su; });
     if (Store.db.products.some(p => p.col)) { S.priceV = 1; Store.save(); }
   },
   /* The rule for 'sold by': most products Piece, rate above 1000 Bosta, the three small milk packs (25, 15, 10 gram) Dozen, water Carton, Saver tea bag Bosta */
@@ -120,7 +137,7 @@ const Prod = {
   },
   useSheetList() {
     const old = Store.db.products, u = Prod.usedIds(); let n = 1;
-    Store.db.products = Prod.build().map(b => { const o = old.find(p => p.name === b.name); if (o) return { ...b, ...o, price: o.price || b.price, col: b.col, row: b.row }; while (u.has('p' + String(n).padStart(3, '0'))) n++; const id = 'P' + String(n++).padStart(3, '0'); u.add(id.toLowerCase()); return { ...b, id }; });
+    Store.db.products = Prod.build().map(b => { const o = old.find(p => Prod.key(p.name) === Prod.key(b.name)); if (o) return { ...b, ...o, price: o.price || b.price, col: b.col, row: b.row }; while (u.has('p' + String(n).padStart(3, '0'))) n++; const id = 'P' + String(n++).padStart(3, '0'); u.add(id.toLowerCase()); return { ...b, id }; });
     Store.db.settings.seeded = true; Store.db.settings.layoutV = 2; Sales.cur = null; Sales.clean(); Store.snap(); Store.save(); },
   filtered() {
     const q = Prod.q.toLowerCase();
@@ -160,13 +177,14 @@ const Prod = {
       <div><label for="f_cat">Category (optional)</label><input id="f_cat" list="cl" value="${U.esc(p?.category)}"><datalist id="cl">${cats.map(c => `<option value="${U.esc(c)}">`).join('')}</datalist></div>
       <div><label for="f_unit">Unit or pack size (pick or type your own)</label><input id="f_unit" list="ul" value="${U.esc(p ? p.unit : 'Carton')}"><datalist id="ul">${allUnits().map(u => `<option value="${U.esc(u)}">`).join('')}</datalist></div>
       <div><label for="f_price">Price per unit (৳)</label><input id="f_price" type="number" min="0" step="any" value="${p ? p.price : ''}"></div>
-      <div><label for="f_su">Sold by (rate unit)</label><select id="f_su">${SELL.map(u => `<option ${(p?.su || 'Piece') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div><div><label for="f_pp">Second-unit price (optional)</label><input id="f_pp" type="number" min="0" step="any" value="${p?.pp || ''}"></div><div><label for="f_pu">Second unit (for mixed sales)</label><select id="f_pu">${['Piece', 'Litre', 'Dozen'].map(u => `<option ${(p?.pu || 'Piece') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div><div><label for="f_lit">Litres in 1 piece (for stock)</label><input id="f_lit" type="number" min="0" step="any" value="${p?.lit || ''}"></div><div><label for="f_ppc">Pieces in 1 carton (for exact stock)</label><input id="f_ppc" type="number" min="0" step="any" value="${p?.ppc || ''}"></div><div><label for="f_ppb">Pieces in 1 bosta (optional)</label><input id="f_ppb" type="number" min="0" step="any" value="${p?.ppb || ''}"></div><div><label for="f_min">Low stock alert at (in sold-by unit)</label><input id="f_min" type="number" min="0" step="any" value="${p?.min || ''}"></div><div><label for="f_col">Printed sheet column</label><select id="f_col"><option value="">Auto</option><option value="L" ${p?.col === 'L' ? 'selected' : ''}>Left</option><option value="R" ${p?.col === 'R' ? 'selected' : ''}>Right</option></select></div><div><label for="f_row">Printed sheet row no.</label><input id="f_row" type="number" min="0" step="1" value="${p?.row || ''}"></div>
-      <div class="full"><label for="f_desc">Description (optional)</label><textarea id="f_desc" rows="2">${U.esc(p?.desc)}</textarea></div></div><p id="f_err" style="color:var(--danger);margin:8px 0 0"></p>`;
+      <div><label for="f_su">Sold by (rate unit)</label><select id="f_su">${SELL.map(u => `<option ${(p?.su || 'Piece') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
+      <div class="full"><label for="f_desc">Description (optional)</label><textarea id="f_desc" rows="2">${U.esc(p?.desc)}</textarea></div>
+      <details class="meta full"><summary>More options: second unit, stock, sheet position</summary><div class="fg" style="margin-top:10px"><div><label for="f_pp">Second-unit price (optional)</label><input id="f_pp" type="number" min="0" step="any" value="${p?.pp || ''}"></div><div><label for="f_pu">Second unit (for mixed sales)</label><select id="f_pu">${['Piece', 'Litre', 'Dozen'].map(u => `<option ${(p?.pu || 'Piece') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div><div><label for="f_lit">Litres in 1 piece (for stock)</label><input id="f_lit" type="number" min="0" step="any" value="${p?.lit || ''}"></div><div><label for="f_ppc">Pieces in 1 carton (for exact stock)</label><input id="f_ppc" type="number" min="0" step="any" value="${p?.ppc || ''}"></div><div><label for="f_ppb">Pieces in 1 bosta (optional)</label><input id="f_ppb" type="number" min="0" step="any" value="${p?.ppb || ''}"></div><div><label for="f_min">Low stock alert at (in sold-by unit)</label><input id="f_min" type="number" min="0" step="any" value="${p?.min || ''}"></div><div><label for="f_col">Printed sheet column</label><select id="f_col"><option value="">Auto</option><option value="L" ${p?.col === 'L' ? 'selected' : ''}>Left</option><option value="R" ${p?.col === 'R' ? 'selected' : ''}>Right</option></select></div><div><label for="f_row">Printed sheet row no.</label><input id="f_row" type="number" min="0" step="1" value="${p?.row || ''}"></div></div></details></div><p id="f_err" style="color:var(--danger);margin:8px 0 0"></p>`;
     let out;
     U.modal(p ? 'Edit product' : 'Add product', body, [{ label: 'Cancel', v: false }, { label: 'Save product', v: true, cls: 'primary' }], () => {
       const v = id => U.$('#' + id).value.trim(), err = m => { U.$('#f_err').textContent = m; return false; };
       const id = v('f_id'), name = v('f_name'), price = U.num(v('f_price'));
-      if (!id) return err('Product ID is required.'); if (!name) return err('Product name is required.');
+      if (!id) return err('Product ID is required.'); if (!name) return err('Product name is required.'); if (Store.db.products.some(x => x !== p && Prod.key(x.name) === Prod.key(name))) return err('A product with this name already exists.');
       if (!p && Prod.find(id)) return err('That Product ID already exists.');
       if (!v('f_unit')) return err('Unit is required.');
       if (!(price >= 0)) return err('Price must be a number, 0 or more.');
