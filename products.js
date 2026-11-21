@@ -22,7 +22,7 @@ const SEED = `ফ্রেশ দুধ- ৫০০ গ্রাম|Milk||436.5|L
 চা পাতা প্রিমিয়াম- ২০০ গ্রাম|Tea||107|L|17|Piece
 চা পাতা প্রিমিয়াম- ১০০ গ্রাম|Tea||520|L|18|Piece
 চা পাতা প্রিমিয়াম- ৫০ গ্রাম|Tea||530|L|19|Piece
-চা পাতা- ১৫ গ্রাম|Tea||0|L|20|Piece
+চা পাতা- ১৫ গ্রাম|Tea||7.5|L|20|Piece
 চা পাতা দানাদার- ৫০০ গ্রাম|Tea||440|L|21|Piece
 চা পাতা দানাদার- ২৫০ গ্রাম|Tea||442|L|22|Piece
 ফ্রেশ গোল্ড টি CP- ৫০০ গ্রাম|Tea||450|L|23|Piece
@@ -111,6 +111,12 @@ const Prod = {
   migrateLiquids() {
     const S = Store.db.settings; if (S.liqV) return;
     if (Store.db.products.some(p => p.col)) { Store.db.products.forEach(p => { if (p.col && new RegExp('পানি|সয়াবিন|গুগলি|ফ্রেশ আপ').test(p.name)) { if (!p.pu || p.pu === 'Piece') p.pu = 'Litre'; if (p.su === 'Piece') p.su = 'Carton'; } }); S.liqV = 1; Store.save(); }
+  },
+  /* One-time: rate of চা পাতা- ১৫ গ্রাম is 7.5 (only if no price is set yet) */
+  migratePrices2() {
+    const S = Store.db.settings; if (S.priceV2) return;
+    const p = Store.db.products.find(x => x.name === 'চা পাতা- ১৫ গ্রাম'); if (p && !(p.price > 0)) p.price = 7.5;
+    if (Store.db.products.some(x => x.col)) { S.priceV2 = 1; Store.save(); }
   },
   useSheetList() {
     const old = Store.db.products, u = Prod.usedIds(); let n = 1;

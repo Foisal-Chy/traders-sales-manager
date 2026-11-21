@@ -1,6 +1,6 @@
 'use strict';
 /* storage.js - utilities (U) and persistent data store (Store) */
-const KEY = 'mgi_fresh_v1', APP_V = '12';
+const KEY = 'mgi_fresh_v1', APP_V = '13';
 const U = {
   charts: {},
   r2: n => Math.round((Number(n) + Number.EPSILON) * 100) / 100,
