@@ -2,13 +2,13 @@
 /* sales.js - daily sales sheet editor, history and print layout */
 const Sales = {
   cur: null, dirty: false, bad: new Set(), H: { d: '', month: '', from: '', to: '' },
-  blank: date => ({ id: null, paid: 0, sr: '', dsr: '', market: '', date: date || U.today(), rows: Prod.sorted().map(p => ({ pid: p.id, name: p.name, unit: p.su || 'Carton', price: p.price, qty: 0, pe: false, pp: p.pp || 0, pq: 0 })) }),
-  mark() { Sales.dirty = true; clearTimeout(Sales._t); Sales._t = setTimeout(() => { try { localStorage.setItem(KEY + '_draft', JSON.stringify(Sales.cur)); } catch (e) { } }, 400); },
-  clean() { Sales.dirty = false; clearTimeout(Sales._t); try { localStorage.removeItem(KEY + '_draft'); } catch (e) { } },
+  blank: date => ({ id: null, paid: 0, sr: '', dsr: '', market: '', date: date || U.today(), rows: Prod.sorted().map(p => ({ pid: p.id, name: p.name, unit: p.su || 'Piece', price: p.price, qty: 0, pe: false, pp: p.pp || 0, pq: 0, pu: p.pu || 'Piece' })) }),
+  mark() { Sales.dirty = true; clearTimeout(Sales._t); Sales._t = setTimeout(() => { if (Store.enc) { Store.db.draft = Sales.cur; Store.save(); } else try { localStorage.setItem(KEY + '_draft', JSON.stringify(Sales.cur)); } catch (e) { } }, 400); },
+  clean() { Sales.dirty = false; clearTimeout(Sales._t); if (Store.enc && Store.db) { if (Store.db.draft) { delete Store.db.draft; Store.save(); } } else try { localStorage.removeItem(KEY + '_draft'); } catch (e) { } },
   /* Restores an unsaved sheet after refresh or crash */
   loadDraft() {
     try {
-      const d = JSON.parse(localStorage.getItem(KEY + '_draft'));
+      const d = Store.enc ? Store.db.draft : JSON.parse(localStorage.getItem(KEY + '_draft'));
       if (d && Array.isArray(d.rows) && /^\d{4}-\d{2}-\d{2}$/.test(d.date) && d.rows.every(r => r && Number.isFinite(r.price) && Number.isFinite(r.qty) && r.qty >= 0 && r.price >= 0)) { Sales.cur = d; Sales.dirty = true; return true; }
     } catch (e) { }
     return false;
@@ -38,7 +38,7 @@ const Sales = {
     const flt = () => { const q = $('#rs').value.toLowerCase(), so = $('#so').checked; tb.querySelectorAll('tr').forEach(tr => { const r = c.rows[tr.dataset.i]; tr.hidden = !((!q || r.name.toLowerCase().includes(q)) && (!so || Sales.has(r))); }); };
     $('#rs').oninput = flt; $('#so').onchange = flt;
     $('#sd').onchange = e => { c.date = e.target.value; Sales.mark(); Sales.note(el); };
-    $('#apb').onclick = () => { const p = Prod.find($('#ap').value); if (!p) return U.toast('Select a product first', 'err'); c.rows.push({ pid: p.id, name: p.name, unit: p.su || 'Carton', price: p.price, qty: 0, pe: false, pp: p.pp || 0, pq: 0 }); Sales.mark(); Sales.render(el); };
+    $('#apb').onclick = () => { const p = Prod.find($('#ap').value); if (!p) return U.toast('Select a product first', 'err'); c.rows.push({ pid: p.id, name: p.name, unit: p.su || 'Piece', price: p.price, qty: 0, pe: false, pp: p.pp || 0, pq: 0, pu: p.pu || 'Piece' }); Sales.mark(); Sales.render(el); };
     $('#nw').onclick = async () => { if (Sales.dirty && !(await U.confirm('Discard changes?', 'This sheet has unsaved changes. Start a new sheet anyway?', 'Discard'))) return; Sales.cur = Sales.blank(); Sales.clean(); Sales.render(el); };
     $('#pr').onclick = $('#pdf').onclick = e => { if (e.currentTarget.id === 'pdf') U.toast('In the print dialog, choose "Save as PDF" as the destination'); Sales.printAsk(c); };
     $('#m_paid').oninput = e => { const n = U.num(e.target.value); c.paid = n >= 0 ? U.r2(n) : 0; Sales.mark(); };
@@ -48,7 +48,7 @@ const Sales = {
       const tr = e.target.closest('tr'), i = +tr.dataset.i, f = e.target.dataset.f, r = c.rows[i];
       if (f === 'unit') {
         Sales.mark();
-        if (e.target.value !== '__custom') { r.unit = e.target.value; if (r.unit === 'Piece') r.pe = false; Sales.redraw(tr, i); return; }
+        if (e.target.value !== '__custom') { r.unit = e.target.value; if (r.unit === (r.pu || 'Piece')) r.pe = false; Sales.redraw(tr, i); return; }
         U.modal('Custom unit', '<label for="cu">Unit or pack size (e.g. 750 g, 3 KG, Dozen)</label><input id="cu" style="width:100%">', [{ label: 'Cancel', v: false }, { label: 'Use unit', v: true, cls: 'primary' }], () => U.$('#cu').value.trim() ? true : false)
           .then(ok => { const u = ok && U.$('#cu').value.trim(); if (u) r.unit = u; Sales.render(el); });
         return;
@@ -71,11 +71,11 @@ const Sales = {
     };
   },
   rowHTML(r, i) {
-    const nm = U.esc(r.name), pi = (f, ph, v) => `<input class="in pi" data-f="${f}" type="number" min="0" step="any" inputmode="decimal" placeholder="${ph}" value="${v || ''}" aria-label="${ph} of ${nm}">`;
+    const nm = U.esc(r.name), pu = r.pu || 'Piece', pi = (f, ph, v) => `<input class="in pi" data-f="${f}" type="number" min="0" step="any" inputmode="decimal" placeholder="${ph}" value="${v || ''}" aria-label="${ph} of ${nm}">`;
     return `<tr data-i="${i}" class="${Sales.has(r) ? '' : 'zero'}"><td class="sl">${i + 1}</td><td class="pn">${nm}</td>
-      <td data-l="Sold by"><select data-f="unit" aria-label="Sold by for ${nm}">${[...new Set([...SELL, r.unit])].map(u => `<option ${u === r.unit ? 'selected' : ''}>${U.esc(u)}</option>`).join('')}</select>${r.unit !== 'Piece' ? `<button type="button" class="pcb${r.pe ? ' on' : ''}" data-pc aria-pressed="${!!r.pe}" title="Also sold in pieces">+ Piece</button>` : ''}</td>
-      <td class="n" data-l="Price per unit"><input class="in" data-f="price" type="number" min="0" step="any" inputmode="decimal" value="${r.price}" aria-label="Price of ${nm}">${r.pe ? pi('pp', 'Piece price', r.pp) : ''}</td>
-      <td class="n" data-l="Quantity sold"><input class="in" data-f="qty" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${r.qty || ''}" aria-label="Quantity of ${nm}">${r.pe ? pi('pq', 'Pieces', r.pq) : ''}</td>
+      <td data-l="Sold by"><select data-f="unit" aria-label="Sold by for ${nm}">${[...new Set([...SELL, r.unit])].map(u => `<option ${u === r.unit ? 'selected' : ''}>${U.esc(u)}</option>`).join('')}</select>${r.unit !== pu ? `<button type="button" class="pcb${r.pe ? ' on' : ''}" data-pc aria-pressed="${!!r.pe}" title="Also sold by ${pu}">+ ${pu}</button>` : ''}</td>
+      <td class="n" data-l="Price per unit"><input class="in" data-f="price" type="number" min="0" step="any" inputmode="decimal" value="${r.price}" aria-label="Price of ${nm}">${r.pe ? pi('pp', pu + ' price', r.pp) : ''}</td>
+      <td class="n" data-l="Quantity sold"><input class="in" data-f="qty" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${r.qty || ''}" aria-label="Quantity of ${nm}">${r.pe ? pi('pq', pu + ' qty', r.pq) : ''}</td>
       <td class="n lt" data-l="Total">${U.money(Sales.line(r))}</td><td class="rm"><button class="ic" data-rm aria-label="Remove ${nm} from sheet"><i data-lucide="x"></i></button></td></tr>`;
   },
   /* Redraws one row; clears stale 'invalid value' flags for it so Save is never blocked by a field that no longer exists */
@@ -101,7 +101,7 @@ const Sales = {
         [{ label: 'Cancel', v: false }, { label: 'Save as extra transaction', v: 'add' }, { label: 'Replace existing', v: 'rep', cls: 'danger' }]);
       if (!a) return; if (a === 'rep') db.sales = db.sales.filter(s => s !== ex[0]);
     }
-    const rec = { id: c.id || U.uid(), paid: c.paid || 0, sr: c.sr || '', dsr: c.dsr || '', market: c.market || '', date: c.date, rows: c.rows.map(r => ({ pid: r.pid, name: r.name, unit: r.unit, price: U.r2(r.price), qty: r.qty, pe: !!r.pe, pp: U.r2(r.pp || 0), pq: r.pq || 0 })), updated: new Date().toISOString() };
+    const rec = { id: c.id || U.uid(), paid: c.paid || 0, sr: c.sr || '', dsr: c.dsr || '', market: c.market || '', date: c.date, rows: c.rows.map(r => ({ pid: r.pid, name: r.name, unit: r.unit, price: U.r2(r.price), qty: r.qty, pe: !!r.pe, pp: U.r2(r.pp || 0), pq: r.pq || 0, pu: r.pu || 'Piece' })), updated: new Date().toISOString() };
     const i = db.sales.findIndex(s => s.id === rec.id); i >= 0 ? db.sales[i] = rec : db.sales.push(rec);
     c.id = rec.id; Sales.clean(); Store.save(); U.toast('Sales sheet saved: ' + U.money(Sales.total(rec))); Sales.render(U.$('#view'));
   },
@@ -124,11 +124,11 @@ const Sales = {
       ex.forEach(r => (L.length <= R.length ? L : R).push(r));
     }
     const n = onlySold ? Math.max(L.length, R.length, 1) : Math.max(L.length, R.length, 30, ...Store.db.products.map(p => p.row || 0));
-    const LET = { Carton: 'K', Piece: 'P', Dozen: 'D', Bosta: 'B', KG: 'Kg' }, ul = u => LET[u] || (/^[A-Za-z]/.test(u || '') ? String(u).charAt(0).toUpperCase() : '');
+    const LET = { Carton: 'K', Piece: 'P', Dozen: 'D', Bosta: 'B', KG: 'Kg', Litre: 'L' }, ul = u => LET[u] || (/^[A-Za-z]/.test(u || '') ? String(u).charAt(0).toUpperCase() : '');
     const cells = r => {
       if (!r) return '<td></td><td></td><td></td><td></td>';
       const nm = `<td>${U.esc(r.name)}</td>`; if (!Sales.has(r)) return nm + '<td></td><td></td><td></td>';
-      const parts = []; if (r.qty > 0) parts.push([r.qty, r.price, ul(r.unit)]); if (r.pe && r.pq > 0) parts.push([r.pq, r.pp, 'P']);
+      const parts = []; if (r.qty > 0) parts.push([r.qty, r.price, ul(r.unit)]); if (r.pe && r.pq > 0) parts.push([r.pq, r.pp, ul(r.pu || 'Piece')]);
       const d = parts.length > 1 ? ' d' : '';
       return nm + `<td class="n${d}">${parts.map(q => nf(q[0])).join('<br>')}</td><td class="n${d}">${parts.map(q => nf(q[1]) + (q[2] ? ' ' + q[2] : '')).join('<br>')}</td><td class="n">${nf(Sales.line(r))}</td>`;
     };
@@ -161,9 +161,9 @@ const Sales = {
       const s = Store.db.sales.find(x => x.id === b.closest('tr').dataset.id), a = b.dataset.a;
       if (a === 'p') Sales.printAsk(s);
       if (a === 'e') { if (Sales.dirty && !(await U.confirm('Discard changes?', 'The sheet open in Daily Sales has unsaved changes. Replace it?', 'Discard'))) return; Sales.cur = JSON.parse(JSON.stringify(s)); Sales.clean(); location.hash = '#sales'; }
-      if (a === 'v') U.modal('Sales on ' + U.fdate(s.date), `<div class="tw" style="max-height:50vh"><table class="tbl"><thead><tr><th>Product</th><th>Unit</th><th class="n">Price</th><th class="n">Qty</th><th class="n">Total</th></tr></thead><tbody>${s.rows.map(r => `<tr><td>${U.esc(r.name)}</td><td>${U.esc(r.unit)}</td><td class="n">${U.money(r.price)}</td><td class="n">${r.qty}${r.pe && r.pq ? ' + ' + r.pq + ' P' : ''}</td><td class="n">${U.money(Sales.line(r))}</td></tr>`).join('')}</tbody></table></div><p><b>Grand total: ${U.money(Sales.total(s))}</b></p>`);
+      if (a === 'v') U.modal('Sales on ' + U.fdate(s.date), `<div class="tw" style="max-height:50vh"><table class="tbl"><thead><tr><th>Product</th><th>Unit</th><th class="n">Price</th><th class="n">Qty</th><th class="n">Total</th></tr></thead><tbody>${s.rows.map(r => `<tr><td>${U.esc(r.name)}</td><td>${U.esc(r.unit)}</td><td class="n">${U.money(r.price)}</td><td class="n">${r.qty}${r.pe && r.pq ? ' + ' + r.pq + ' ' + U.esc(r.pu || 'Piece') : ''}</td><td class="n">${U.money(Sales.line(r))}</td></tr>`).join('')}</tbody></table></div><p><b>Grand total: ${U.money(Sales.total(s))}</b></p>`);
       if (a === 'x' && await U.confirm('Delete sales record?', `Delete the sheet for <b>${U.fdate(s.date)}</b> (${U.money(Sales.total(s))})? Export a backup first if unsure.`)) {
-        Store.db.sales = Store.db.sales.filter(x => x !== s); if (Sales.cur && Sales.cur.id === s.id) Sales.cur.id = null; Store.save(); U.toast('Sales record deleted'); Sales.history(el);
+        const i = Store.db.sales.indexOf(s); Store.db.sales.splice(i, 1); if (Sales.cur && Sales.cur.id === s.id) Sales.cur.id = null; Store.save(); Sales.history(el); U.icons(); U.toastUndo('Sales record deleted', () => Store.db.sales.splice(i, 0, s));
       }
     });
   }

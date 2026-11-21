@@ -1,6 +1,6 @@
 'use strict';
 /* storage.js - utilities (U) and persistent data store (Store) */
-const KEY = 'mgi_fresh_v1', APP_V = '8';
+const KEY = 'mgi_fresh_v1', APP_V = '12';
 const U = {
   charts: {},
   r2: n => Math.round((Number(n) + Number.EPSILON) * 100) / 100,
@@ -16,6 +16,12 @@ const U = {
   toast(msg, type = 'ok') {
     const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg;
     U.$('#toasts').appendChild(t); setTimeout(() => t.remove(), 3200);
+  },
+  /* Toast with an Undo button (9 seconds) for deletes */
+  toastUndo(msg, fn) {
+    const t = document.createElement('div'); t.className = 'toast'; t.innerHTML = U.esc(msg) + ' <button class="ub">Undo</button>';
+    U.$('#toasts').appendChild(t); const id = setTimeout(() => t.remove(), 9000);
+    t.querySelector('.ub').onclick = () => { clearTimeout(id); t.remove(); fn(); Store.save(); App.route(); U.toast('Restored'); };
   },
   /* Generic dialog. Resolves with the clicked button's value (false = cancelled). validate(v) may return false to keep it open. */
   modal(title, body, buttons = [{ label: 'OK', v: true, cls: 'primary' }], validate) {
@@ -97,13 +103,19 @@ const Store = {
     if (raw) U.pending = 'Saved data was unreadable. A copy was kept in the browser and the app was reset.';
     Store.db = Store.defaults();
   },
+  /* Safety copy of everything before a restore, reset or delete-all, so it can be undone from Settings */
+  keepPrev() { try { localStorage.setItem(KEY + '_prev', JSON.stringify(Store.db)); } catch (e) { } },
+  async restorePrev() {
+    let d; try { d = JSON.parse(localStorage.getItem(KEY + '_prev')); } catch (e) { return false; }
+    if (!Store.valid(d)) return false; d = Store.merge(d); d.settings.pin = Store.db.settings.pin; Store.db = d; Store.save(); return true;
+  },
   snap() { Store.lp = {}; Store.lpDb = Store.db; Store.db.products.forEach(p => Store.lp[p.id] = p.price); },
   logPrices() {
     if (Store.lpDb !== Store.db) return Store.snap();
     Store.db.products.forEach(p => { const o = Store.lp[p.id]; if (o !== undefined && o !== p.price) Store.db.priceLog.push({ date: U.today(), pid: p.id, name: p.name, old: o, price: p.price }); Store.lp[p.id] = p.price; });
     if (Store.db.priceLog.length > 3000) Store.db.priceLog = Store.db.priceLog.slice(-2000);
   },
-  save() { Store.lp && Store.logPrices(); try { localStorage.setItem(KEY, JSON.stringify(Store.db)); } catch (e) { U.toast('Could not save: browser storage is full or blocked', 'err'); } },
+  save() { Store.lp && Store.logPrices(); if (Store.enc) { clearTimeout(Store._w); Store._w = setTimeout(Store.flush, 100); return; } try { localStorage.setItem(KEY, JSON.stringify(Store.db)); } catch (e) { U.toast('Could not save: browser storage is full or blocked', 'err'); } },
   exportJSON() { Store.db.settings.lastBackup = U.today(); Store.save(); U.download('mgi-fresh-backup-' + U.today() + '.json', JSON.stringify({ app: 'mgi-fresh', exported: new Date().toISOString(), data: Store.db }, null, 2), 'application/json'); },
   parseImport(text) {
     try { const j = JSON.parse(text), d = j && j.data ? j.data : j; return Store.valid(d) ? { ok: true, data: Store.merge(d) } : { ok: false, error: 'File is not a valid MGI Fresh backup.' }; }

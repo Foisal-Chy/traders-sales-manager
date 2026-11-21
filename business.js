@@ -22,17 +22,18 @@ const Biz = {
     const L = Object.values(Biz.ledger()).sort((a, b) => b.due - a.due), q = (Biz.dq || '').toLowerCase(), rows = L.filter(x => !q || x.name.toLowerCase().includes(q)), tot = f => U.money(L.reduce((a, x) => a + x[f], 0));
     el.innerHTML = `<div class="grid"><div class="stat"><span>Total billed</span><b>${tot('debit')}</b></div><div class="stat"><span>Total received</span><b>${tot('credit')}</b></div><div class="stat"><span>Total due (baki)</span><b style="color:var(--danger)">${tot('due')}</b></div></div>
       <div class="bar"><div class="grow"><label for="dq">Search market or shop</label><input id="dq" style="width:100%" value="${U.esc(Biz.dq || '')}"></div><button class="btn primary" id="dpay"><i data-lucide="plus"></i>Add payment</button></div>
-      ${Biz.table(['Market / shop', 'Billed', 'Received', 'Due', ''], rows.map(x => [U.esc(x.name || '(No market)'), U.money(x.debit), U.money(x.credit), `<b style="color:${x.due > 0 ? 'var(--danger)' : 'inherit'}">${U.money(x.due)}</b>`, `<button class="btn sm" data-l="${U.esc(Biz.mk(x.name))}">Ledger</button>`]))}<p class="muted">Due = sales sheets billed to a market, minus money paid at delivery, payments received and returns. Type the same market name on each sheet.</p>`;
+      ${Biz.table(['Market / shop', 'Billed', 'Received', 'Due', ''], rows.map(x => [U.esc(x.name || '(No market)'), U.money(x.debit), U.money(x.credit), `<b style="color:${x.due > 0 ? 'var(--danger)' : 'inherit'}">${U.money(x.due)}</b>`, `<button class="btn sm" data-led="${U.esc(Biz.mk(x.name))}">Ledger</button>`]))}<p class="muted">Due = sales sheets billed to a market, minus money paid at delivery, payments received and returns. Type the same market name on each sheet.</p>`;
     U.$('#dq', el).oninput = e => { Biz.dq = e.target.value; Biz.keepFocus(el, 'dq', () => Biz.dues(el)); U.icons(); };
     U.$('#dpay', el).onclick = () => Biz.addPayment(el);
-    el.querySelectorAll('[data-l]').forEach(b => b.onclick = () => Biz.showLedger(b.dataset.l, el));
+    el.querySelectorAll('[data-led]').forEach(b => b.onclick = () => Biz.showLedger(b.dataset.led, el));
   },
   showLedger(key, el) {
     const x = Biz.ledger()[key]; let bal = 0;
-    const rows = x.rows.map(r => { bal = U.r2(bal + r.debit - r.credit); return `<tr><td>${U.fdate(r.date)}</td><td>${U.esc(r.label)}</td><td class="n">${r.debit ? U.money(r.debit) : ''}</td><td class="n">${r.credit ? U.money(r.credit) : ''}</td><td class="n">${U.money(bal)}</td><td>${r.id ? `<button class="ic" data-dp="${r.id}" aria-label="Delete payment"><i data-lucide="trash-2"></i></button>` : ''}</td></tr>`; }).join('');
-    U.modal('Ledger: ' + (x.name || '(No market)'), `<div class="tw" style="max-height:50vh"><table class="tbl"><thead><tr><th>Date</th><th>Details</th><th class="n">Billed</th><th class="n">Received</th><th class="n">Balance</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><p><b>Due now: ${U.money(x.due)}</b></p>`, [{ label: 'Close', v: true, cls: 'primary' }]);
+    const rows = x.rows.map(r => { bal = U.r2(bal + r.debit - r.credit); return `<tr><td class="k" data-l="Date">${U.fdate(r.date)}</td><td data-l="Details">${U.esc(r.label)}</td><td class="n" data-l="Billed">${r.debit ? U.money(r.debit) : ''}</td><td class="n" data-l="Received">${r.credit ? U.money(r.credit) : ''}</td><td class="n" data-l="Balance">${U.money(bal)}</td><td data-l="">${r.id ? `<button class="ic" data-dp="${r.id}" aria-label="Delete payment"><i data-lucide="trash-2"></i></button>` : ''}</td></tr>`; }).join('');
+    U.modal('Ledger: ' + (x.name || '(No market)'), `<div class="tw rt" style="max-height:50vh"><table class="tbl"><thead><tr><th>Date</th><th>Details</th><th class="n">Billed</th><th class="n">Received</th><th class="n">Balance</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><p><b>Due now: ${U.money(x.due)}</b></p>`, [{ label: 'Close', v: true, cls: 'primary' }]);
     U.$('#dlg').querySelectorAll('[data-dp]').forEach(b => b.onclick = async () => {
-      if (await U.confirm('Delete payment?', 'This payment record will be removed and the due will go up.')) { Store.db.payments = Store.db.payments.filter(p => p.id !== b.dataset.dp); Store.save(); U.toast('Payment deleted'); Biz.dues(el); U.icons(); }
+      const pay = Store.db.payments.find(p => p.id === b.dataset.dp), i = Store.db.payments.indexOf(pay);
+      if (await U.confirm('Delete payment?', 'This payment record will be removed and the due will go up.')) { Store.db.payments.splice(i, 1); Store.save(); Biz.dues(el); U.icons(); U.toastUndo('Payment deleted', () => Store.db.payments.splice(i, 0, pay)); }
     });
   },
   addPayment(el) {
@@ -72,7 +73,7 @@ const Biz = {
       out = { name: n, role: U.$('#t_r').value, phone: U.$('#t_p').value.trim(), salary: U.r2(s), join: U.$('#t_j').value, active: U.$('#t_a').value === '1', note: U.$('#t_o').value.trim() };
     });
     if (!v) return;
-    if (v === 'del') { if (!(await U.confirm('Delete staff?', `Delete <b>${U.esc(x.name)}</b> and all salary records of this person?`))) return; Store.db.staff = Store.db.staff.filter(s => s !== x); Store.db.salaryPay = Store.db.salaryPay.filter(p => p.sid !== x.id); }
+    if (v === 'del') { if (!(await U.confirm('Delete staff?', `Delete <b>${U.esc(x.name)}</b> and all salary records of this person?`))) return; const si = Store.db.staff.indexOf(x), sp = Store.db.salaryPay.filter(p => p.sid === x.id); Store.db.staff.splice(si, 1); Store.db.salaryPay = Store.db.salaryPay.filter(p => p.sid !== x.id); Store.save(); Biz.srm(el); U.icons(); return U.toastUndo('Staff deleted', () => { Store.db.staff.splice(si, 0, x); Store.db.salaryPay.push(...sp); }); }
     else if (x) Object.assign(x, out); else Store.db.staff.push({ id: U.uid(), ...out });
     Store.save(); U.toast('Saved'); Biz.srm(el); U.icons();
   },
@@ -87,8 +88,8 @@ const Biz = {
   },
   payHistory(x, el) {
     const L = Store.db.salaryPay.filter(p => p.sid === x.id).sort((a, b) => a.date < b.date ? 1 : -1);
-    U.modal('Salary history: ' + x.name, L.length ? `<div class="tw" style="max-height:50vh"><table class="tbl"><thead><tr><th>Date</th><th>Month</th><th>Type</th><th class="n">Amount</th><th></th></tr></thead><tbody>${L.map(p => `<tr><td>${U.fdate(p.date)}</td><td>${p.month}</td><td>${p.type}${p.note ? ' - ' + U.esc(p.note) : ''}</td><td class="n">${U.money(p.amount)}</td><td><button class="ic" data-dp="${p.id}" aria-label="Delete payment"><i data-lucide="trash-2"></i></button></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No payments recorded yet.</p>', [{ label: 'Close', v: true, cls: 'primary' }]);
-    U.$('#dlg').querySelectorAll('[data-dp]').forEach(b => b.onclick = async () => { if (await U.confirm('Delete payment?', 'This salary record will be removed.')) { Store.db.salaryPay = Store.db.salaryPay.filter(p => p.id !== b.dataset.dp); Store.save(); Biz.srm(el); U.icons(); Biz.payHistory(x, el); } });
+    U.modal('Salary history: ' + x.name, L.length ? `<div class="tw rt" style="max-height:50vh"><table class="tbl"><thead><tr><th>Date</th><th>Month</th><th>Type</th><th class="n">Amount</th><th></th></tr></thead><tbody>${L.map(p => `<tr><td class="k" data-l="Date">${U.fdate(p.date)}</td><td data-l="Month">${p.month}</td><td data-l="Type">${p.type}${p.note ? ' - ' + U.esc(p.note) : ''}</td><td class="n" data-l="Amount">${U.money(p.amount)}</td><td data-l=""><button class="ic" data-dp="${p.id}" aria-label="Delete payment"><i data-lucide="trash-2"></i></button></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No payments recorded yet.</p>', [{ label: 'Close', v: true, cls: 'primary' }]);
+    U.$('#dlg').querySelectorAll('[data-dp]').forEach(b => b.onclick = async () => { { const pay = Store.db.salaryPay.find(p => p.id === b.dataset.dp), i = Store.db.salaryPay.indexOf(pay); if (await U.confirm('Delete payment?', 'This salary record will be removed.')) { Store.db.salaryPay.splice(i, 1); Store.save(); Biz.srm(el); U.icons(); U.toastUndo('Salary record deleted', () => Store.db.salaryPay.splice(i, 0, pay)); } } });
   },
 
   /* ---------- SR / DSR / Market report ---------- */
@@ -105,35 +106,43 @@ const Biz = {
   },
 
   /* ---------- Stock, returns, damage ---------- */
+  /* Everything is counted in pieces behind the scenes, so carton, dozen and piece sales and entries add up correctly. */
+  per(p, u) { const f = { Piece: 1, Dozen: 12, Carton: p.ppc, Bosta: p.ppb, Litre: p.lit > 0 ? 1 / p.lit : 0 }[u]; return f > 0 ? f : 1; },
+  known: (p, u) => ['Piece', 'Dozen', 'KG'].includes(u) || (u === 'Carton' && p.ppc > 0) || (u === 'Litre' && p.lit > 0) || (u === 'Bosta' && p.ppb > 0),
+  unitOf: (p, u) => SELL.includes(u) ? u : (p.su || 'Piece'),
   stockCalc() {
-    const m = {}; Store.db.products.forEach(p => m[p.id] = { p, inn: 0, sold: 0, ret: 0, dmg: 0 });
-    Store.db.stock.forEach(e => { const x = m[e.pid]; if (x) { if (e.type === 'in') x.inn += e.qty; else if (e.type === 'return') x.ret += e.qty; else x.dmg += e.qty; } });
-    Store.db.sales.forEach(s => s.rows.forEach(r => { const x = m[r.pid]; if (x) x.sold += r.qty; }));
-    return Object.values(m).map(x => (x.cur = U.r2(x.inn + x.ret - x.sold - x.dmg), x));
+    const m = {}; Store.db.products.forEach(p => m[p.id] = { p, inn: 0, sold: 0, ret: 0, dmg: 0, u: new Set(), f: Biz.per(p, p.su || 'Piece') });
+    const add = (x, k, u, q) => { u = Biz.unitOf(x.p, u); x[k] += q * Biz.per(x.p, u); x.u.add(u); };
+    Store.db.stock.forEach(e => { const x = m[e.pid]; if (x) add(x, e.type === 'in' ? 'inn' : e.type === 'return' ? 'ret' : 'dmg', e.unit, e.qty); });
+    Store.db.sales.forEach(s => s.rows.forEach(r => { const x = m[r.pid]; if (!x) return; if (r.qty > 0) add(x, 'sold', r.unit, r.qty); if (r.pe && r.pq > 0) add(x, 'sold', r.pu || 'Piece', r.pq); }));
+    return Object.values(m).map(x => { x.cur = x.inn + x.ret - x.sold - x.dmg; x.warn = x.u.size > 1 && [...x.u].some(u => !Biz.known(x.p, u)); x.show = v => U.r2(v / x.f); return x; });
   },
-  low: () => Biz.stockCalc().filter(x => x.p.min > 0 && x.cur <= x.p.min),
-  lowHtml() { const l = Biz.low(); return l.length ? `<div class="note">⚠ Low stock: ${l.slice(0, 4).map(x => U.esc(x.p.name) + ' (' + x.cur + ')').join(', ')}${l.length > 4 ? ' and ' + (l.length - 4) + ' more' : ''}. <a href="#stock">See stock</a></div>` : ''; },
+  low: () => Biz.stockCalc().filter(x => x.p.min > 0 && x.cur <= x.p.min * x.f),
+  lowHtml() { const l = Biz.low(); return l.length ? `<div class="note">⚠ Low stock: ${l.slice(0, 4).map(x => U.esc(x.p.name) + ' (' + x.show(x.cur) + ')').join(', ')}${l.length > 4 ? ' and ' + (l.length - 4) + ' more' : ''}. <a href="#stock">See stock</a></div>` : ''; },
   stock(el) {
     const q = (Biz.sq || '').toLowerCase(), all = Biz.stockCalc(), rows = all.filter(x => !q || x.p.name.toLowerCase().includes(q));
     const T = { in: 'Stock in', return: 'Customer return', damage: 'Damaged / expired' }, ev = Store.db.stock.slice().sort((a, b) => a.date < b.date ? 1 : -1).slice(0, 30);
     el.innerHTML = `${Biz.lowHtml()}<div class="bar"><div class="grow"><label for="sq">Search product</label><input id="sq" style="width:100%" value="${U.esc(Biz.sq || '')}"></div><div class="row"><button class="btn primary" data-t="in">Stock in</button><button class="btn" data-t="return">Customer return</button><button class="btn" data-t="damage">Damaged / expired</button></div></div>
-      ${Biz.table(['Product', 'In', 'Sold', 'Returned', 'Damaged', 'In stock', 'Alert at'], rows.map(x => [U.esc(x.p.name), x.inn, x.sold, x.ret, x.dmg, `<b style="color:${x.cur < 0 || (x.p.min > 0 && x.cur <= x.p.min) ? 'var(--danger)' : 'inherit'}">${x.cur}</b>`, x.p.min || '-']))}
-      <h3 style="margin:14px 0 8px">Recent entries</h3>${Biz.table(['Date / type', 'Product', 'Qty', 'Details', ''], ev.map(e => [U.fdate(e.date) + ' ' + T[e.type], U.esc(e.name), e.qty, U.esc([e.market, e.note].filter(Boolean).join(' - ')), `<button class="ic" data-x="${e.id}" aria-label="Delete entry"><i data-lucide="trash-2"></i></button>`]))}<p class="muted">In stock = Stock in + Returned - Sold (from sales sheets) - Damaged. Add your opening stock as a Stock in entry. Set the alert level in each product.</p>`;
+      ${Biz.table(['Product (sold by)', 'In', 'Sold', 'Returned', 'Damaged', 'In stock', 'Alert at'], rows.map(x => [`${U.esc(x.p.name)} <small class="muted">(${U.esc(x.p.su || 'Piece')})</small>${x.warn ? ' <span title="Mixed units: set pieces per carton or bosta in Products for exact stock" style="color:var(--danger)">⚠</span>' : ''}`, x.show(x.inn), x.show(x.sold), x.show(x.ret), x.show(x.dmg), `<b style="color:${x.cur < 0 || (x.p.min > 0 && x.cur <= x.p.min * x.f) ? 'var(--danger)' : 'inherit'}">${x.show(x.cur)}</b>`, x.p.min || '-']))}
+      <h3 style="margin:14px 0 8px">Recent entries</h3>${Biz.table(['Date / type', 'Product', 'Qty', 'Details', ''], ev.map(e => [U.fdate(e.date) + ' ' + T[e.type], U.esc(e.name), e.qty + ' ' + U.esc(e.unit || ''), U.esc([e.market, e.note].filter(Boolean).join(' - ')), `<button class="ic" data-x="${e.id}" aria-label="Delete entry"><i data-lucide="trash-2"></i></button>`]))}<p class="muted">All numbers are shown in each product's "sold by" unit. Set "Pieces in 1 carton" (and bosta) in Products so cartons, dozens and pieces add up exactly. A ⚠ means units are mixed and a conversion is missing. Add your opening stock as a Stock in entry.</p>`;
     U.$('#sq', el).oninput = e => { Biz.sq = e.target.value; Biz.keepFocus(el, 'sq', () => Biz.stock(el)); U.icons(); };
     el.querySelectorAll('[data-t]').forEach(b => b.onclick = () => Biz.addStock(b.dataset.t, el));
-    el.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => { if (await U.confirm('Delete entry?', 'Stock numbers (and the market due for a return) will change.')) { Store.db.stock = Store.db.stock.filter(e => e.id !== b.dataset.x); Store.save(); Biz.stock(el); U.icons(); } });
+    el.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => {
+      const e = Store.db.stock.find(x => x.id === b.dataset.x), i = Store.db.stock.indexOf(e);
+      if (await U.confirm('Delete entry?', 'Stock numbers (and the market due for a return) will change.')) { Store.db.stock.splice(i, 1); Store.save(); Biz.stock(el); U.icons(); U.toastUndo('Entry deleted', () => Store.db.stock.splice(i, 0, e)); }
+    });
   },
   addStock(type, el) {
     const P = Store.db.products, ret = type === 'return'; let out;
-    U.modal({ in: 'Stock in (from company)', return: 'Customer return', damage: 'Damaged / expired' }[type], `<div class="fg"><div class="full"><label for="k_p">Product</label><select id="k_p">${P.map(p => `<option value="${U.esc(p.id)}">${U.esc(p.name)}</option>`).join('')}</select></div><div><label for="k_d">Date</label><input id="k_d" type="date" value="${U.today()}"></div><div><label for="k_q">Quantity</label><input id="k_q" type="number" min="0" step="any"></div>
-      ${ret ? `<div><label for="k_m">Market / shop</label><input id="k_m" list="dl_market">${Biz.list('dl_market', 'market')}</div><div><label for="k_r">Rate (৳ per unit)</label><input id="k_r" type="number" min="0" step="any" value="${P[0] ? P[0].price : ''}"></div>` : ''}<div class="full"><label for="k_n">Note (optional)</label><input id="k_n"></div></div><p id="k_e" style="color:var(--danger)"></p>`,
+    U.modal({ in: 'Stock in (from company)', return: 'Customer return', damage: 'Damaged / expired' }[type], `<div class="fg"><div class="full"><label for="k_p">Product</label><select id="k_p">${P.map(p => `<option value="${U.esc(p.id)}">${U.esc(p.name)}</option>`).join('')}</select></div><div><label for="k_d">Date</label><input id="k_d" type="date" value="${U.today()}"></div><div><label for="k_q">Quantity</label><input id="k_q" type="number" min="0" step="any"></div><div><label for="k_u">In unit</label><select id="k_u">${SELL.map(u => `<option ${P[0] && (P[0].su || 'Piece') === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
+      ${ret ? `<div><label for="k_r">Rate (৳ per that unit)</label><input id="k_r" type="number" min="0" step="any" value="${P[0] ? P[0].price : ''}"></div><div class="full"><label for="k_m">Market / shop</label><input id="k_m" list="dl_market">${Biz.list('dl_market', 'market')}</div>` : ''}<div class="full"><label for="k_n">Note (optional)</label><input id="k_n"></div></div><p id="k_e" style="color:var(--danger)"></p>`,
       [{ label: 'Cancel', v: false }, { label: 'Save', v: true, cls: 'primary' }], () => {
         const p = Prod.find(U.$('#k_p').value), q = U.num(U.$('#k_q').value), err = t => { U.$('#k_e').textContent = t; return false; };
         if (!p) return err('Choose a product.'); if (!(q > 0)) return err('Quantity must be more than 0.');
         const r = ret ? U.num(U.$('#k_r').value) : 0, m = ret ? U.$('#k_m').value.trim() : ''; if (ret && (!m || !(r >= 0))) return err('Enter the market and a rate.');
-        out = { id: U.uid(), date: U.$('#k_d').value || U.today(), pid: p.id, name: p.name, type, qty: q, rate: r || 0, market: m, note: U.$('#k_n').value.trim() };
+        out = { id: U.uid(), date: U.$('#k_d').value || U.today(), pid: p.id, name: p.name, type, qty: q, unit: U.$('#k_u').value, rate: r || 0, market: m, note: U.$('#k_n').value.trim() };
       }).then(ok => { if (ok) { Store.db.stock.push(out); Store.save(); U.toast('Entry saved'); Biz.stock(el); U.icons(); } });
-    if (ret) { const s = U.$('#k_p'); s.onchange = () => { const p = Prod.find(s.value); if (p) U.$('#k_r').value = p.price; }; }
+    const s = U.$('#k_p'); s.onchange = () => { const p = Prod.find(s.value); if (p) { U.$('#k_u').value = p.su || 'Piece'; if (ret) U.$('#k_r').value = p.price; } };
   },
 
   /* ---------- Price history ---------- */
@@ -151,7 +160,7 @@ const Biz = {
     add('Daily totals', [['Date', 'SR', 'DSR', 'Market', 'Total', 'Paid at delivery'], ...S.map(s => [s.date, s.sr || '', s.dsr || '', s.market || '', Sales.total(s), s.paid || 0])]);
     add('Product-wise', [['Product', 'Unit', 'Qty sold', 'Revenue'], ...Rep.productStats().map(p => [p.name, p.unit, p.qty, p.rev])]);
     add('Dues', [['Market', 'Billed', 'Received', 'Due'], ...Object.values(Biz.ledger()).map(x => [x.name || '(No market)', x.debit, x.credit, x.due])]);
-    add('Stock', [['Product', 'In', 'Sold', 'Returned', 'Damaged', 'In stock'], ...Biz.stockCalc().map(x => [x.p.name, x.inn, x.sold, x.ret, x.dmg, x.cur])]);
+    add('Stock', [['Product', 'Unit', 'In', 'Sold', 'Returned', 'Damaged', 'In stock'], ...Biz.stockCalc().map(x => [x.p.name, x.p.su || 'Piece', x.show(x.inn), x.show(x.sold), x.show(x.ret), x.show(x.dmg), x.show(x.cur)])]);
     add('Staff', [['Name', 'Role', 'Phone', 'Monthly salary'], ...Store.db.staff.map(x => [x.name, x.role, x.phone || '', x.salary || 0])]);
     XLSX.writeFile(wb, 'foisal-traders-' + U.today() + '.xlsx'); U.toast('Excel file downloaded');
   }
@@ -165,6 +174,7 @@ const Pin = {
     let h = 5381; for (const c of t) h = ((h << 5) + h + c.charCodeAt(0)) | 0; return 'x' + h;
   },
   lock() {
+    if (Store.enc) { Store.flush().then(() => location.reload()); return; }
     if (!Store.db.settings.pin) return;
     const dl = U.$('#dlg'); if (dl.open) dl.close();
     let o = U.$('#lock'); if (!o) { o = document.createElement('div'); o.id = 'lock'; document.body.appendChild(o); }
@@ -172,7 +182,7 @@ const Pin = {
     o.hidden = false; const f = U.$('#lp', o); f.focus();
     U.$('.lockbox', o).onsubmit = async e => { e.preventDefault(); if (await Pin.hash(f.value) === Store.db.settings.pin) { o.hidden = true; Pin.touch(); } else { U.$('#le', o).textContent = 'Wrong PIN'; f.value = ''; } };
   },
-  touch() { clearTimeout(Pin.t); if (Store.db.settings.pin) Pin.t = setTimeout(Pin.lock, 5 * 60 * 1000); },
+  touch() { clearTimeout(Pin.t); if (Store.db && (Store.db.settings.pin || Store.enc)) Pin.t = setTimeout(Pin.lock, 5 * 60 * 1000); },
   async change() {
     const S = Store.db.settings; let cur, np;
     if (S.pin) { const ok = await U.modal('Current PIN', '<input id="p0" type="password" inputmode="numeric" style="width:100%">', [{ label: 'Cancel', v: false }, { label: 'Next', v: true, cls: 'primary' }], () => { cur = U.$('#p0').value; }); if (!ok) return; if (await Pin.hash(cur) !== S.pin) return U.toast('Wrong PIN', 'err'); }

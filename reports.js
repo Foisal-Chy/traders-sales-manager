@@ -36,8 +36,8 @@ const Rep = {
     ['p', 'from', 'to', 'a', 'b'].forEach(k => U.$('#r_' + k, el).onchange = e => { st[k] = e.target.value; Rep.render(el); U.icons(); });
     U.$('#r_xlsx', el).onclick = Biz.xlsx;
     U.$('#r_csv', el).onclick = () => {
-      const rows = [['Date', 'SR', 'DSR', 'Market', 'Product', 'Sold by', 'Unit price', 'Quantity', 'Piece price', 'Pieces', 'Total price']];
-      Store.db.sales.slice().sort((a, b) => a.date < b.date ? -1 : 1).forEach(s => s.rows.filter(Sales.has).forEach(r => rows.push([s.date, s.sr || '', s.dsr || '', s.market || '', r.name, r.unit, r.price.toFixed(2), r.qty, r.pe ? (r.pp || 0).toFixed(2) : '', r.pe ? r.pq || 0 : '', Sales.line(r).toFixed(2)])));
+      const rows = [['Date', 'SR', 'DSR', 'Market', 'Product', 'Sold by', 'Unit price', 'Quantity', 'Second unit', 'Second price', 'Second qty', 'Total price']];
+      Store.db.sales.slice().sort((a, b) => a.date < b.date ? -1 : 1).forEach(s => s.rows.filter(Sales.has).forEach(r => rows.push([s.date, s.sr || '', s.dsr || '', s.market || '', r.name, r.unit, r.price.toFixed(2), r.qty, r.pe ? (r.pu || 'Piece') : '', r.pe ? (r.pp || 0).toFixed(2) : '', r.pe ? r.pq || 0 : '', Sales.line(r).toFixed(2)])));
       U.download('mgi-sales-report-' + U.today() + '.csv', U.toCSV(rows), 'text/csv'); U.toast('Sales CSV exported');
     };
     U.$('#r_pcsv', el).onclick = () => { U.download('mgi-product-report-' + U.today() + '.csv', U.toCSV([['Product', 'Sold by', 'Quantity sold', 'Revenue'], ...ps.map(p => [p.name, p.unit, p.qty, p.rev.toFixed(2)])]), 'text/csv'); U.toast('Product report exported'); };

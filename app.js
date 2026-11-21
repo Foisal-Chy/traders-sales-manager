@@ -7,7 +7,7 @@ const App = {
     document.title = title + ' | MGI Fresh'; U.$('#title').textContent = title;
     document.querySelectorAll('#nav a, #bnav a').forEach(a => a.classList.toggle('on', a.hash === '#' + k));
     U.$('#today').textContent = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); el.classList.remove('pg'); void el.offsetWidth; el.classList.add('pg');
-    U.$('#lockBtn').hidden = !Store.db.settings.pin;
+    U.$('#lockBtn').hidden = !(Store.db.settings.pin || Store.enc);
     U.$('#side').classList.remove('open'); (fn || App.settings)(el); U.icons(); window.scrollTo(0, 0);
   },
   theme(t) { document.documentElement.dataset.theme = t; U.$('#brandName').textContent = Store.db.settings.dealer; document.querySelector('meta[name=theme-color]').content = t === 'dark' ? '#151d18' : '#ffffff'; U.$('#themeBtn').innerHTML = `<i data-lucide="${t === 'dark' ? 'sun' : 'moon'}"></i>`; U.icons(); },
@@ -22,9 +22,10 @@ const App = {
       <div class="dlgact"><button class="btn primary" id="s_save">Save settings</button></div></div>
       <div class="card"><h3>Backup and restore</h3><div class="row"><button class="btn" id="b_exp"><i data-lucide="download"></i>Export all data (JSON)</button><button class="btn" id="b_imp"><i data-lucide="upload"></i>Restore from backup</button><input type="file" id="b_file" accept=".json,application/json" hidden></div>
       <p class="muted">Data lives in this browser only. Export a backup regularly, and before clearing browser data.</p></div>
-      <div class="card"><h3>App lock (PIN)</h3><p class="muted">${S.pin ? 'A PIN is set. The app locks after 5 minutes of no use.' : 'Ask for a PIN when the app opens. This hides your sales from casual viewers; it does not encrypt data, so keep your backup file safe.'}</p><button class="btn" id="u_pin"><i data-lucide="lock"></i>${S.pin ? 'Change or remove PIN' : 'Set PIN'}</button></div>
+      ${Cloud.card()}
+      ${Store.enc ? `<div class="card"><h3>Security: your data is encrypted</h3><p class="muted">Everything this app keeps on this phone is encrypted with your password. The app locks after 5 minutes of no use. Backup files you download are not encrypted, so keep them safe.</p><div class="row"><button class="btn" id="e_lock"><i data-lucide="lock"></i>Lock now</button><button class="btn" id="e_chg">Change password</button><button class="btn danger" id="e_off">Turn off encryption</button></div></div>` : `<div class="card"><h3>Security</h3><p class="muted">A PIN only hides the screen from casual viewers. <b>Encryption</b> also scrambles the saved data on this phone and needs your password to open it, so it is the stronger choice. ${S.pin ? 'A PIN is set (locks after 5 minutes).' : ''}</p><div class="row"><button class="btn primary" id="e_on"><i data-lucide="shield-check"></i>Encrypt my data</button><button class="btn" id="u_pin"><i data-lucide="lock"></i>${S.pin ? 'Change or remove PIN' : 'Set a PIN only'}</button></div></div>`}
       <div class="card"><h3>App version</h3><p class="muted">Running version <b>${APP_V}</b>. If you uploaded new files but still see the old app, press this button. Your sales and products are not deleted.</p><button class="btn" id="u_app"><i data-lucide="refresh-cw"></i>Update app (clear cached files)</button></div>
-      <div class="card"><h3>Danger zone</h3><div class="row"><button class="btn" id="d_sheet">Load product list from our printed sheet</button><button class="btn danger" id="d_prod">Delete all products</button><button class="btn danger" id="d_all">Reset entire application</button></div></div>`;
+      <div class="card"><h3>Danger zone</h3>${localStorage.getItem(KEY + '_prev') ? '<div class="note">A safety copy from before your last restore, reset or delete-all is available. <button class="btn sm" id="u_prev">Undo it (bring that data back)</button></div>' : ''}<div class="row"><button class="btn" id="d_sheet">Load product list from our printed sheet</button><button class="btn danger" id="d_prod">Delete all products</button><button class="btn danger" id="d_all">Reset entire application</button></div></div>`;
     const $ = s => U.$(s, el);
     $('#s_save').onclick = () => {
       ['dealer', 'phone', 'email', 'address', 'titleBn', 'distBn', 'addrBn', 'phoneBn', 'phone2Bn'].forEach(k => S[k] = $('#s_' + k).value.trim()); S.theme = $('#s_theme').value; S.showZero = $('#s_zero').checked; S.bnDigits = $('#s_bn').checked;
@@ -36,19 +37,21 @@ const App = {
       const f = e.target.files[0]; if (!f) return; const r = Store.parseImport(await f.text());
       if (!r.ok) return U.toast(r.error, 'err');
       if (await U.ask('Restore backup?', `This replaces all current data with <b>${r.data.products.length}</b> products and <b>${r.data.sales.length}</b> sales sheets. A safety copy of current data is kept in the browser.`, [{ label: 'Cancel', v: false }, { label: 'Replace data', v: true, cls: 'danger' }])) {
-        r.data.settings.pin = Store.db.settings.pin;
-        try { localStorage.setItem(KEY + '_prev', JSON.stringify(Store.db)); } catch (x) { }
+        r.data.settings.pin = Store.db.settings.pin; Store.keepPrev();
         Store.db = r.data; Store.save(); Sales.cur = null; Sales.clean(); App.theme(Store.db.settings.theme); U.toast('Backup restored'); App.settings(el);
       }
     };
-    $('#d_sheet').onclick = async () => { if (await U.confirm('Load the sheet product list?', `Replaces the product list with the ${Prod.build().length} products from your printed sheet. Same-name products keep their prices; new ones start at 0. Saved sales are not changed.`, 'Replace products')) { Prod.useSheetList(); U.toast('Product list loaded'); } };
-    $('#u_pin').onclick = () => Pin.change();
+    $('#d_sheet').onclick = async () => { if (await U.confirm('Load the sheet product list?', `Replaces the product list with the ${Prod.build().length} products from your printed sheet. Same-name products keep their prices; new ones start at 0. Saved sales are not changed.`, 'Replace products')) { Store.keepPrev(); Prod.useSheetList(); U.toast('Product list loaded'); App.settings(el); } };
+    const up = $('#u_prev'); if (up) up.onclick = async () => { if (await U.confirm('Bring back the previous data?', 'Your current data will be replaced by the safety copy.', 'Bring it back') && await Store.restorePrev()) { Sales.cur = null; Sales.clean(); U.toast('Previous data restored'); App.settings(el); } };
+    Cloud.bind(el);
+    const on = (id, fn) => { const x = $(id); if (x) x.onclick = fn; };
+    on('#u_pin', () => Pin.change()); on('#e_on', () => Sec.enable()); on('#e_off', () => Sec.disable()); on('#e_chg', () => Sec.change()); on('#e_lock', () => Pin.lock());
     $('#u_app').onclick = async () => { try { const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r => r.unregister())); await Promise.all((await caches.keys()).map(k => caches.delete(k))); } catch (e) { } location.reload(true); };
-    $('#d_prod').onclick = async () => { if (await U.confirm('Delete all products?', 'All products will be removed (saved sales are not affected). Export products to CSV first if needed.', 'Delete all')) { Store.db.products = []; Store.save(); Sales.cur = null; U.toast('All products deleted'); } };
-    $('#d_all').onclick = async () => { if (await U.confirm('Reset the entire application?', 'This permanently deletes all products, sales and settings. Export a backup first.', 'Reset everything')) { Store.db = Store.defaults(); Store.db.settings.seeded = true; Store.save(); Sales.cur = null; Sales.clean(); App.theme('light'); U.toast('Application reset'); App.settings(el); } };
+    $('#d_prod').onclick = async () => { if (await U.confirm('Delete all products?', 'All products will be removed (saved sales are not affected). Export products to CSV first if needed.', 'Delete all')) { Store.keepPrev(); Store.db.products = []; Store.save(); Sales.cur = null; U.toast('All products deleted'); App.settings(el); } };
+    $('#d_all').onclick = async () => { if (await U.confirm('Reset the entire application?', 'This permanently deletes all products, sales and settings. Export a backup first.', 'Reset everything')) { Store.keepPrev(); Store.db = Store.defaults(); Store.db.settings.seeded = true; Store.save(); Sales.cur = null; Sales.clean(); App.theme('light'); U.toast('Application reset'); App.settings(el); } };
   },
-  init() {
-    Store.load(); Prod.seed(); Prod.migrateUnits(); Prod.migrateLayout(); Store.snap(); App.theme(Store.db.settings.theme);
+  async init() {
+    if (Store.peek()) await Pin.unlockEnc(); else Store.load(); Prod.seed(); Prod.migrateUnits(); Prod.migrateNames(); Prod.migrateLayout(); Prod.migratePrices(); Prod.migrateSold(); Prod.migrateLiquids(); Store.snap(); App.theme(Store.db.settings.theme);
     U.$('#themeBtn').onclick = () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; Store.db.settings.theme = t; Store.save(); App.theme(t); App.route(); };
     U.$('#menu').onclick = () => U.$('#side').classList.toggle('open');
     window.addEventListener('hashchange', App.route);
@@ -61,8 +64,11 @@ const App = {
       const ok = await U.ask('Use your real product list?', 'Your printed sheet has 48 products. Replace the 40 sample products with them? Saved sales are not changed. Prices start at 0 and you set them in Products.', [{ label: 'Not now', v: false }, { label: 'Replace products', v: true, cls: 'primary' }]);
       Store.db.settings.sheetAsked = true; if (ok) Prod.useSheetList(); Store.save(); App.route();
     }, 800);
-    U.$('#lockBtn').onclick = () => Pin.lock(); Pin.lock(); Pin.touch();
+    if (document.fonts) ['400', '600', '700'].forEach(w => document.fonts.load(w + ' 14px "Hind Siliguri"', 'আমার').catch(() => { }));
+    U.$('#lockBtn').onclick = () => Pin.lock(); if (!Store.enc) Pin.lock(); Pin.touch();
+    document.addEventListener('visibilitychange', () => { if (document.hidden && Store.enc) Store.flush(); });
     App.route(); if (U.pending) U.toast(U.pending, 'err');
+    setTimeout(() => Cloud.auto(), 2500);
   }
 };
 document.addEventListener('DOMContentLoaded', App.init);
