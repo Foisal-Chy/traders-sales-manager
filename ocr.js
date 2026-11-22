@@ -1,3 +1,4 @@
+/* MGI Fresh | Dealership Management System. Developed by Md. Foisal Hossen Chowdhury, Department of CSE, International Islamic University Chittagong (IIUC). */
 'use strict';
 /* ocr.js - read a photographed sales sheet in the browser (Tesseract.js), review it, then load it into Daily Sales */
 const Ocr = {

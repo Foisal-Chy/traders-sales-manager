@@ -1,3 +1,4 @@
+/* MGI Fresh | Dealership Management System. Developed by Md. Foisal Hossen Chowdhury, Department of CSE, International Islamic University Chittagong (IIUC). */
 'use strict';
 /* secure.js - optional encryption of everything saved on the phone (AES-GCM, key made from your password with PBKDF2) */
 const Crypt = {

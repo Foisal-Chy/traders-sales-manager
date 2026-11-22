@@ -1,3 +1,4 @@
+/* MGI Fresh | Dealership Management System. Developed by Md. Foisal Hossen Chowdhury, Department of CSE, International Islamic University Chittagong (IIUC). */
 'use strict';
 /* dashboard.js - summary cards, charts and recent activity (all from saved data) */
 const Dash = {
@@ -18,6 +19,7 @@ const Dash = {
       <div class="card"><h3>Recent sales activity</h3>${recent.length ? `<table class="tbl">${recent.map(x => `<tr><td>${U.fdate(x.date)}</td><td class="n">${Sales.sold(x)} products</td><td class="n">${U.money(Sales.total(x))}</td></tr>`).join('')}</table>` : '<div class="empty">Save a daily sales sheet to see activity here.</div>'}</div></div>`;
     Dash.count(el);
     const bk = U.$('#bk', el); if (bk) bk.onclick = () => { Store.exportJSON(); Dash.render(el); U.icons(); };
+    el.insertAdjacentHTML('beforeend', '<p class="muted" style="text-align:center;font-size:12px;margin:26px 0 0">Developed by Md. Foisal Hossen Chowdhury | CSE, IIUC</p>');
     const dm = {}; s.forEach(x => dm[x.date] = U.r2((dm[x.date] || 0) + Sales.total(x)));
     const d14 = [...Array(14)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - 13 + i); return U.ymd(d); });
     U.chart('c1', 'line', d14.map(d => d.slice(5)), d14.map(d => dm[d] || 0), 'Sales');

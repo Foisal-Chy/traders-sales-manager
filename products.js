@@ -1,3 +1,4 @@
+/* MGI Fresh | Dealership Management System. Developed by Md. Foisal Hossen Chowdhury, Department of CSE, International Islamic University Chittagong (IIUC). */
 'use strict';
 /* products.js - product management */
 const UNITS = ['Carton', 'Piece', 'Bosta', 'KG', 'Gram', '10 g', '50 g', '100 g', '200 g', '250 g', '500 g', '1 KG', '2 KG', '5 KG', '10 KG', '25 KG', '50 KG'];

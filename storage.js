@@ -1,6 +1,7 @@
+/* MGI Fresh | Dealership Management System. Developed by Md. Foisal Hossen Chowdhury, Department of CSE, International Islamic University Chittagong (IIUC). */
 'use strict';
 /* storage.js - utilities (U) and persistent data store (Store) */
-const KEY = 'mgi_fresh_v1', APP_V = '14';
+const KEY = 'mgi_fresh_v1', APP_V = '15';
 const U = {
   charts: {},
   r2: n => Math.round((Number(n) + Number.EPSILON) * 100) / 100,
